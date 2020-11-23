@@ -1,0 +1,19 @@
+[package]
+name = "microtree-codegen"
+version = "0.1.0"
+authors = ["Wojciech Polak <frondeus@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.34"
+duct = "0.13.4"
+inflections = "1.1.1"
+itertools = "0.9.0"
+quote = "1.0.7"
+serde = { version = "1.0.117", features=["derive"] }
+serde_json = "1.0.59"
+syn = "1.0.52"
+ungrammar = "1.1.4"
+xshell = "0.1.6"

@@ -1,0 +1,6 @@
+Value = Array | 'number' | String
+
+String = left_dquote: '"' value: 'string'? right_dqoute: '"'
+
+Array = '[' values:( Value (',' Value)* ','? )?  ']'
+

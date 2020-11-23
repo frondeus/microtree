@@ -1,0 +1,11 @@
+{
+    "tokens": {
+        "LBracket": "[",
+        "RBracket": "]",
+        "Comma": ",",
+        "DQuote": "\"",
+        "Number": "number",
+        "StringVal": "string"
+    },
+    "handwritten": ["StringVal", "Number"]
+}
