@@ -1,5 +1,5 @@
 use anyhow::Result;
-use inflections::case::to_lower_case;
+use inflections::case::{to_lower_case, to_snake_case};
 use itertools::Itertools;
 use quote::{format_ident, quote};
 use serde::Deserialize;
@@ -238,13 +238,16 @@ pub fn codegen(
                 let ty = field.ty();
                 let idx_ty = format_ident!("T{}", idx);
                 match field.as_many() {
-                    Some(delit) => {
+                    Some(Some(delit)) => {
                         let delit_name = format_ident!("{}", delit.name);
                         quote!(
                             #name: Vec<Box<dyn AstBuilder<T = #ty>>>,
                             #delit_name: #idx_ty
                         )
                     }
+                    Some(None) => quote!(
+                        #name: Vec<Box<dyn AstBuilder<T = #ty>>>
+                    ),
                     None => quote!(#name: #idx_ty),
                 }
             })
@@ -254,8 +257,8 @@ pub fn codegen(
             .fields
             .iter()
             .flat_map(|field| match field.as_many() {
-                None => vec![field.name()],
-                Some(delit) => vec![field.name(), format_ident!("{}", delit.name)],
+                None | Some(None) => vec![field.name()],
+                Some(Some(delit)) => vec![field.name(), format_ident!("{}", delit.name)],
             })
             .collect::<Vec<_>>();
 
@@ -266,7 +269,8 @@ pub fn codegen(
                 let name = field.name();
                 match field.as_many() {
                     None => quote!(#name: Some(#name)),
-                    Some(delit) => {
+                    Some(None) => quote!(#name),
+                    Some(Some(delit)) => {
                         let delit_name = format_ident!("{}", delit.name);
                         quote!(
                             #name,
@@ -286,7 +290,10 @@ pub fn codegen(
                 let ty = field.ty();
                 let idx_ty = format_ident!("T{}", idx);
                 match field.as_many() {
-                    Some(delit) => {
+                    Some(None) => quote!(
+                        #name: Vec<Box<dyn AstBuilder<T = #ty>>>
+                    ),
+                    Some(Some(delit)) => {
                         let delit_name = format_ident!("{}", delit.name);
                         quote!(
                             #name: Vec<Box<dyn AstBuilder<T = #ty>>>,
@@ -302,24 +309,28 @@ pub fn codegen(
             .fields
             .iter()
             .enumerate()
-            .map(|(idx, _)| format_ident!("T{}", idx))
+            .filter_map(|(idx, field)| match field.as_many() {
+                Some(None) => None,
+                _ => Some(format_ident!("T{}", idx)),
+            })
             .collect::<Vec<_>>();
 
         let build_where_list = node
             .fields
             .iter()
             .enumerate()
-            .map(|(idx, field)| {
+            .filter_map(|(idx, field)| {
                 let ty = field.ty();
                 let idx_ty = format_ident!("T{}", idx);
                 match field.as_many() {
-                    Some(delit) => {
+                    Some(Some(delit)) => {
                         let delit_ty = format_ident!("{}", delit.ty);
-                        quote!(
+                        Some(quote!(
                             #idx_ty: AstBuilder<T = #delit_ty>
-                        )
+                        ))
                     }
-                    None => quote!(#idx_ty: AstBuilder<T = #ty>),
+                    Some(None) => None,
+                    None => Some(quote!(#idx_ty: AstBuilder<T = #ty>)),
                 }
             })
             .collect::<Vec<_>>();
@@ -345,7 +356,7 @@ pub fn codegen(
                 let name = field.name();
                 //let ty = field.ty();
                 match field.as_many() {
-                    Some(delit) => {
+                    Some(Some(delit)) => {
                         let delit_name = format_ident!("{}", delit.name);
                         quote!(
                             .chain({
@@ -361,6 +372,13 @@ pub fn codegen(
                             })
                         )
                     }
+                    Some(None) => quote!(
+                        .chain({
+                            self.#name.into_iter()
+                                .map(|it| it.build_boxed_green(builder))
+                                .collect::<Vec<_>>()
+                        })
+                    ),
                     None => quote!(
                         .chain(
                             self.#name.map(|it| it.build_green(builder))
@@ -527,12 +545,12 @@ impl AstField {
         }
     }
 
-    fn as_many(&self) -> Option<&Delimiter> {
+    fn as_many(&self) -> Option<Option<&Delimiter>> {
         match self {
             Self::Node {
                 cardinality: Cardinality::Many(delit),
                 ..
-            } => Some(delit),
+            } => Some(delit.as_ref()),
             _ => None,
         }
     }
@@ -551,7 +569,7 @@ struct Delimiter {
 #[derive(Debug)]
 enum Cardinality {
     Optional,
-    Many(Delimiter),
+    Many(Option<Delimiter>),
 }
 
 #[derive(Debug)]
@@ -601,8 +619,6 @@ fn lower_comma_list(
     label: Option<&String>,
     rule: &Rule,
 ) -> bool {
-    use inflections::case::to_snake_case;
-
     let rule = match rule {
         Rule::Seq(it) => it,
         _ => return false,
@@ -654,7 +670,7 @@ fn lower_comma_list(
     acc.push(AstField::Node {
         name,
         ty,
-        cardinality: Cardinality::Many(delimiter),
+        cardinality: Cardinality::Many(Some(delimiter)),
     });
     true
 }
@@ -666,8 +682,6 @@ fn lower_rule(
     label: Option<&String>,
     rule: &Rule,
 ) {
-    use inflections::case::to_snake_case;
-
     if lower_comma_list(acc, grammar, config, label, rule) {
         return;
     }
@@ -694,9 +708,18 @@ fn lower_rule(
                 lower_rule(acc, grammar, config, label, rule);
             }
         }
-        Rule::Rep(inner) => {
-            todo!("REP: {:?}", inner);
-        }
+        Rule::Rep(inner) => match &**inner {
+            Rule::Node(node) => {
+                let ty = grammar[*node].name.clone();
+                let name = label.cloned().unwrap_or_else(|| to_snake_case(&ty));
+                acc.push(AstField::Node {
+                    name,
+                    ty,
+                    cardinality: Cardinality::Many(None),
+                });
+            }
+            _ => todo!("REP: {:?}", inner),
+        },
         Rule::Labeled { label: l, rule } => {
             lower_rule(acc, grammar, config, Some(l), rule);
         }

@@ -13,6 +13,12 @@ fn main() -> Result<()> {
                 "crates/lib/examples/json/json.ungram",
                 "crates/lib/examples/json/generated/",
             )?;
+
+            codegen(
+                "crates/lib/examples/sexp/sexp.config.json",
+                "crates/lib/examples/sexp/sexp.ungram",
+                "crates/lib/examples/sexp/generated/",
+            )?;
         }
         _ => eprintln!("cargo xtask codegen"),
     }

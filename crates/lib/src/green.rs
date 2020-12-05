@@ -100,7 +100,7 @@ fn fmt_green(
     if let GreenKind::Alias(_) = &green.0.kind {
         write!(f, ", ")?;
     } else {
-        write!(f, "@{}..{}", offset, offset + green.size())?;
+        write!(f, " @ {}..{}", offset, offset + green.size())?;
     }
 
     match &green.0.kind {
@@ -125,10 +125,10 @@ fn fmt_green(
         }) => {
             write!(f, " `{}`", value)?;
             if !prefix.is_empty() {
-                write!(f, " ; pre: `{}`", prefix)?;
+                write!(f, " ; pre: `{}`", fmt_debug_str(prefix))?;
             }
             if !postfix.is_empty() {
-                write!(f, " ; post: `{}`", postfix)?;
+                write!(f, " ; post: `{}`", fmt_debug_str(postfix))?;
             }
             writeln!(f)?;
         }
@@ -136,10 +136,16 @@ fn fmt_green(
     Ok(())
 }
 
+fn fmt_debug_str(s: &SmolStr) -> String {
+    s.replace("\t", "\\t").replace("\n", "\\n")
+}
+
 impl Debug for Green {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let width = f.width().unwrap_or_default();
-        fmt_green(self, f, 0, width, false)
+        writeln!(f, "\n--- GREEN TREE ---")?;
+        fmt_green(self, f, 0, width, false)?;
+        writeln!(f, "--- END ---")
     }
 }
 
