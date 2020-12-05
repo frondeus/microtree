@@ -17,8 +17,8 @@ fn main() {
         .fill(
             LParen::build(),
             vec![
-                Atom::build("dupa").into_dyn(),
-                Atom::build("kupa").with_pre("\n  ").into_dyn(),
+                Atom::build("bar").into_dyn(),
+                Atom::build("foo").with_pre("\n  ").into_dyn(),
                 Cons::build()
                     .fill(
                         LParen::build().with_pre(" "),
