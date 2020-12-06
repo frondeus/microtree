@@ -73,9 +73,9 @@ pub struct Node {
 
 #[derive(Debug, PartialEq)]
 pub struct Token {
-    pub prefix: SmolStr,
+    pub leading: SmolStr,
     pub value: SmolStr,
-    pub postfix: SmolStr,
+    pub trailing: SmolStr,
 }
 
 #[derive(Debug, PartialEq)]
@@ -120,15 +120,15 @@ fn fmt_green(
         }
         GreenKind::Token(Token {
             value,
-            prefix,
-            postfix,
+            leading,
+            trailing,
         }) => {
             write!(f, " `{}`", value)?;
-            if !prefix.is_empty() {
-                write!(f, " ; pre: `{}`", fmt_debug_str(prefix))?;
+            if !leading.is_empty() {
+                write!(f, " ; leading: `{}`", fmt_debug_str(leading))?;
             }
-            if !postfix.is_empty() {
-                write!(f, " ; post: `{}`", fmt_debug_str(postfix))?;
+            if !trailing.is_empty() {
+                write!(f, " ; trailing: `{}`", fmt_debug_str(trailing))?;
             }
             writeln!(f)?;
         }
@@ -159,12 +159,12 @@ impl Display for Green {
             GreenKind::Alias(None) => write!(f, ""),
             GreenKind::Token(Token {
                 value,
-                prefix,
-                postfix,
+                leading,
+                trailing,
             }) => {
-                write!(f, "{}", prefix)?;
+                write!(f, "{}", leading)?;
                 write!(f, "{}", value)?;
-                write!(f, "{}", postfix)
+                write!(f, "{}", trailing)
             }
         }
     }
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn print() {
-        let mut builder = GreenBuilder::default();
+        let mut builder = Cache::default();
         let tree = builder.node("Root", |builder| {
             vec![
                 builder.token("number", "2"),
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn nested() {
-        let mut builder = GreenBuilder::default();
+        let mut builder = Cache::default();
         let tree = builder.node("Root", |builder| {
             vec![builder.node("Add", |builder| {
                 vec![
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn builder() {
-        let mut builder = GreenBuilder::default();
+        let mut builder = Cache::default();
         builder.node("Root", |builder| {
             vec![
                 builder.token("number", "2"),
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn print_trivia() {
-        let mut builder = GreenBuilder::default();
+        let mut builder = Cache::default();
         let tree = builder.node("Root", |builder| {
             vec![
                 builder.with_trivia("number", "", "2", " "),

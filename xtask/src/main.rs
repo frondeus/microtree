@@ -19,6 +19,18 @@ fn main() -> Result<()> {
                 "crates/lib/examples/sexp/sexp.ungram",
                 "crates/lib/examples/sexp/generated/",
             )?;
+
+            codegen(
+                "crates/parser/examples/sexp/sexp.config.json",
+                "crates/parser/examples/sexp/sexp.ungram",
+                "crates/parser/examples/sexp/generated/",
+            )?;
+
+            codegen(
+                "crates/parser/examples/modes/modes.config.json",
+                "crates/parser/examples/modes/modes.ungram",
+                "crates/parser/examples/modes/generated/",
+            )?;
         }
         _ => eprintln!("cargo xtask codegen"),
     }

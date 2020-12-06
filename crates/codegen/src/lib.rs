@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use inflections::case::{to_lower_case, to_snake_case};
 use itertools::Itertools;
 use quote::{format_ident, quote};
@@ -44,9 +44,10 @@ pub fn codegen(
     let grammar = std::fs::read_to_string(grammar)?;
     let grammar: Grammar = grammar.parse().unwrap();
 
-    let mut ast = lower(&config, &grammar);
+    let mut ast = lower(&config, &grammar)?;
 
     add_aliases(&mut ast);
+    let ast = dedup_ast(ast);
 
     let output_path = output_path.as_ref();
     let generated_path = output_path.join("mod.rs");
@@ -62,7 +63,7 @@ pub fn codegen(
         quote! {
             #![allow(clippy::redundant_clone, clippy::wrong_self_convention)]
             #![allow(dead_code)]
-            use microtree::{Red, Ast, AstBuilder, GreenBuilder, TokenBuilder, Green, AliasBuilder, IntoBuilder};
+            use microtree::{Red, Ast, AstBuilder, Cache, TokenBuilder, Green, AliasBuilder, IntoBuilder};
         }
     )?;
 
@@ -464,14 +465,14 @@ pub fn codegen(
                         #where_generics
                 {
                     type T = #node_name;
-                    fn build(self, builder: &mut GreenBuilder) -> #node_name {
+                    fn build(self, builder: &mut Cache) -> #node_name {
                         let green = AstBuilder::build_green(self, builder);
                         #node_name::new(Red::root(green)).unwrap()
                     }
-                    fn build_boxed_green(self: Box<Self>, builder: &mut GreenBuilder) -> Green {
+                    fn build_boxed_green(self: Box<Self>, builder: &mut Cache) -> Green {
                         AstBuilder::build_green(*self, builder)
                     }
-                    fn build_green(self, builder: &mut GreenBuilder) -> Green {
+                    fn build_green(self, builder: &mut Cache) -> Green {
                               let children = None.into_iter()
                                 #(#children)*
                                 .collect();
@@ -490,7 +491,7 @@ pub fn codegen(
     Ok(())
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq)]
 struct AstSrc {
     //tokens: Tokens,
     tokens: Vec<AstTokenSrc>,
@@ -498,21 +499,21 @@ struct AstSrc {
     enums: Vec<AstEnumSrc>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct AstTokenSrc {
     name: String,
     token: String,
     aliases: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct AstNodeSrc {
     name: String,
     fields: Vec<AstField>,
     aliases: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum AstField {
     Token {
         ty: String,
@@ -560,25 +561,25 @@ impl AstField {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Delimiter {
     ty: String,
     name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Cardinality {
     Optional,
     Many(Option<Delimiter>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct AstEnumSrc {
     name: String,
     variants: Vec<String>,
 }
 
-fn lower(config: &Config, grammar: &Grammar) -> AstSrc {
+fn lower(config: &Config, grammar: &Grammar) -> Result<AstSrc> {
     let mut res = AstSrc::default();
     res.tokens = config
         .tokens
@@ -593,13 +594,13 @@ fn lower(config: &Config, grammar: &Grammar) -> AstSrc {
     for node in grammar.iter() {
         let node = &grammar[node];
         let name = node.name.clone();
-        match lower_enum(config, &grammar, &node.rule) {
+        match lower_enum(config, &grammar, &node.rule)? {
             Some(variants) => {
                 res.enums.push(AstEnumSrc { name, variants });
             }
             None => {
                 let mut fields = Vec::new();
-                lower_rule(&mut fields, grammar, config, None, &node.rule);
+                lower_rule(&mut fields, grammar, config, None, &node.rule)?;
                 res.nodes.push(AstNodeSrc {
                     name,
                     fields,
@@ -609,7 +610,7 @@ fn lower(config: &Config, grammar: &Grammar) -> AstSrc {
         };
     }
 
-    res
+    Ok(res)
 }
 
 fn lower_comma_list(
@@ -681,9 +682,9 @@ fn lower_rule(
     config: &Config,
     label: Option<&String>,
     rule: &Rule,
-) {
+) -> Result<()> {
     if lower_comma_list(acc, grammar, config, label, rule) {
-        return;
+        return Ok(());
     }
 
     match rule {
@@ -698,14 +699,18 @@ fn lower_rule(
         }
         Rule::Token(token) => {
             let token = grammar[*token].name.clone();
-            let ty = config.tokens[&token].clone();
+            let ty = config
+                .tokens
+                .get(&token)
+                .with_context(|| format!("Could not get token `{}`", token))?
+                .clone();
             let name = label.cloned().unwrap_or_else(|| to_snake_case(&ty));
 
             acc.push(AstField::Token { name, ty });
         }
         Rule::Seq(rules) | Rule::Alt(rules) => {
             for rule in rules {
-                lower_rule(acc, grammar, config, label, rule);
+                lower_rule(acc, grammar, config, label, rule)?;
             }
         }
         Rule::Rep(inner) => match &**inner {
@@ -721,19 +726,22 @@ fn lower_rule(
             _ => todo!("REP: {:?}", inner),
         },
         Rule::Labeled { label: l, rule } => {
-            lower_rule(acc, grammar, config, Some(l), rule);
+            lower_rule(acc, grammar, config, Some(l), rule)?;
         }
-        Rule::Opt(rule) => lower_rule(acc, grammar, config, label, rule),
+        Rule::Opt(rule) => lower_rule(acc, grammar, config, label, rule)?,
     }
+
+    Ok(())
 }
 
-fn lower_enum(config: &Config, grammar: &Grammar, rule: &Rule) -> Option<Vec<String>> {
+fn lower_enum(config: &Config, grammar: &Grammar, rule: &Rule) -> Result<Option<Vec<String>>> {
     let alt = match rule {
         Rule::Alt(it) => it,
-        _ => return None,
+        _ => return Ok(None),
     };
 
-    alt.iter()
+    Ok(alt
+        .iter()
         .map(|alt| match alt {
             Rule::Node(it) => Some(grammar[*it].name.clone()),
             Rule::Token(it) => {
@@ -742,7 +750,7 @@ fn lower_enum(config: &Config, grammar: &Grammar, rule: &Rule) -> Option<Vec<Str
             }
             _ => None,
         })
-        .collect()
+        .collect())
 }
 
 fn add_aliases(ast: &mut AstSrc) {
@@ -776,4 +784,24 @@ fn add_aliases(ast: &mut AstSrc) {
             token.aliases.push((*e).clone());
         }
     }
+}
+
+fn dedup_ast(mut ast: AstSrc) -> AstSrc {
+    ast.enums = ast
+        .enums
+        .into_iter()
+        .unique_by(|e| e.name.clone())
+        .collect();
+    ast.tokens = ast
+        .tokens
+        .into_iter()
+        .unique_by(|e| e.name.clone())
+        .collect();
+    ast.nodes = ast
+        .nodes
+        .into_iter()
+        .unique_by(|e| e.name.clone())
+        .collect();
+
+    ast
 }

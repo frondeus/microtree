@@ -1,6 +1,6 @@
 use microtree::GreenMutate;
 use microtree::Red;
-use microtree::{Ast, AstBuilder, GreenBuilder};
+use microtree::{Ast, AstBuilder, Cache};
 
 mod generated;
 
@@ -13,12 +13,12 @@ fn print(ast: &impl Ast) {
 }
 
 fn main() {
-    let mut builder = GreenBuilder::default(); // Acts like cache
+    let mut builder = Cache::default(); // Acts like cache
     let str = String::build()
         .fill(
-            DQuote::build().with_pre("\t"),
+            DQuote::build().with_leading("\t"),
             StringVal::build("Ala ma kota"),
-            DQuote::build().with_post("\n"),
+            DQuote::build().with_trailing("\n"),
         )
         .build(&mut builder);
 
@@ -45,17 +45,17 @@ fn main() {
         .fill(
             LBracket::build(),
             vec![
-                Number::build(4).with_pre("\n    ").into_dyn(),
+                Number::build(4).with_leading("\n    ").into_dyn(),
                 String::build()
                     .fill(
-                        DQuote::build().with_pre("\n    "),
+                        DQuote::build().with_leading("\n    "),
                         StringVal::build("Test"),
                         DQuote::build(),
                     )
                     .into_dyn(),
             ],
             Comma::build(),
-            RBracket::build().with_pre("\n"),
+            RBracket::build().with_leading("\n"),
         )
         .into_builder()
         .build(&mut builder);
