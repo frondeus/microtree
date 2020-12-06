@@ -1,0 +1,13 @@
+{
+    "tokens": {
+        "OpenP": "(",
+        "CloseP": ")",
+        "Dot": ".",
+        "Atom": "atom",
+        "DQuote": "\"",
+        "OpenI": "${",
+        "CloseI": "}",
+        "Text": "text"
+    },
+    "handwritten": ["Atom", "Text"]
+}

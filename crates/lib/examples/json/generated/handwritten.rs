@@ -66,18 +66,15 @@ impl StringValBuilder {
 
 impl AstBuilder for StringValBuilder {
     type T = StringVal;
-    fn build(self, builder: &mut microtree::GreenBuilder) -> StringVal {
+    fn build(self, builder: &mut microtree::Cache) -> StringVal {
         StringVal::new(Red::root(self.build_green(builder))).unwrap()
     }
 
-    fn build_green(self, builder: &mut microtree::GreenBuilder) -> microtree::Green {
+    fn build_green(self, builder: &mut microtree::Cache) -> microtree::Green {
         builder.token("string", self.val.to_string())
     }
 
-    fn build_boxed_green(
-        self: Box<Self>,
-        builder: &mut microtree::GreenBuilder,
-    ) -> microtree::Green {
+    fn build_boxed_green(self: Box<Self>, builder: &mut microtree::Cache) -> microtree::Green {
         self.build_green(builder)
     }
 }

@@ -1,8 +1,6 @@
 #![allow(clippy::redundant_clone, clippy::wrong_self_convention)]
 #![allow(dead_code)]
-use microtree::{
-    AliasBuilder, Ast, AstBuilder, Green, GreenBuilder, IntoBuilder, Red, TokenBuilder,
-};
+use microtree::{AliasBuilder, Ast, AstBuilder, Cache, Green, IntoBuilder, Red, TokenBuilder};
 
 mod handwritten;
 pub use handwritten::*;
@@ -246,14 +244,14 @@ where
     T2: AstBuilder<T = RBracket>,
 {
     type T = Array;
-    fn build(self, builder: &mut GreenBuilder) -> Array {
+    fn build(self, builder: &mut Cache) -> Array {
         let green = AstBuilder::build_green(self, builder);
         Array::new(Red::root(green)).unwrap()
     }
-    fn build_boxed_green(self: Box<Self>, builder: &mut GreenBuilder) -> Green {
+    fn build_boxed_green(self: Box<Self>, builder: &mut Cache) -> Green {
         AstBuilder::build_green(*self, builder)
     }
-    fn build_green(self, builder: &mut GreenBuilder) -> Green {
+    fn build_green(self, builder: &mut Cache) -> Green {
         let children = None
             .into_iter()
             .chain(self.lbracket.map(|it| it.build_green(builder)).into_iter())
@@ -363,14 +361,14 @@ where
     T2: AstBuilder<T = DQuote>,
 {
     type T = String;
-    fn build(self, builder: &mut GreenBuilder) -> String {
+    fn build(self, builder: &mut Cache) -> String {
         let green = AstBuilder::build_green(self, builder);
         String::new(Red::root(green)).unwrap()
     }
-    fn build_boxed_green(self: Box<Self>, builder: &mut GreenBuilder) -> Green {
+    fn build_boxed_green(self: Box<Self>, builder: &mut Cache) -> Green {
         AstBuilder::build_green(*self, builder)
     }
-    fn build_green(self, builder: &mut GreenBuilder) -> Green {
+    fn build_green(self, builder: &mut Cache) -> Green {
         let children = None
             .into_iter()
             .chain(

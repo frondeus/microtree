@@ -7,11 +7,11 @@ use std::sync::Arc;
 use smol_str::SmolStr;
 
 #[derive(Debug, Default)]
-pub struct GreenBuilder {
+pub struct Cache {
     cache: Vec<Green>,
 }
 
-impl GreenBuilder {
+impl Cache {
     pub fn node(&mut self, name: Name, f: impl FnOnce(&mut Self) -> Vec<Green>) -> Green {
         let children = f(self);
         let size = children.iter().map(|g| g.size()).sum();
@@ -66,33 +66,33 @@ impl GreenBuilder {
     pub fn with_trivia(
         &mut self,
         name: Name,
-        prefix: impl Into<SmolStr>,
+        leading: impl Into<SmolStr>,
         value: impl Into<SmolStr>,
-        postfix: impl Into<SmolStr>,
+        trailing: impl Into<SmolStr>,
     ) -> Green {
-        let prefix = prefix.into();
+        let leading = leading.into();
         let value = value.into();
-        let postfix = postfix.into();
+        let trailing = trailing.into();
         self.add_node(GreenData {
             name,
-            size: value.len() + prefix.len() + postfix.len(),
+            size: value.len() + leading.len() + trailing.len(),
             kind: GreenKind::Token(Token {
-                prefix,
+                leading,
                 value,
-                postfix,
+                trailing,
             }),
         })
     }
 }
 
 #[cfg(test)]
-impl GreenBuilder {
+impl Cache {
     pub fn size(&self) -> usize {
         self.cache.len()
     }
 }
 
-impl GreenBuilder {
+impl Cache {
     fn add_node(&mut self, node: GreenData) -> Green {
         match &node.kind {
             GreenKind::Node(Node { children }) if children.len() >= 5 => Green(Arc::new(node)),

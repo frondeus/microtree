@@ -1,17 +1,17 @@
-use crate::GreenBuilder;
+use crate::Cache;
 use crate::Node;
 use crate::Red;
 use crate::{Green, GreenKind};
 
 pub trait GreenMutate {
-    fn replace(&self, builder: &mut GreenBuilder, green: Green) -> Green;
-    fn push_many(&self, builder: &mut GreenBuilder, green: Vec<Green>) -> Green;
-    fn insert_many(&self, builder: &mut GreenBuilder, idx: usize, green: Vec<Green>) -> Green;
-    fn remove(&self, builder: &mut GreenBuilder) -> Option<Green>;
+    fn replace(&self, builder: &mut Cache, green: Green) -> Green;
+    fn push_many(&self, builder: &mut Cache, green: Vec<Green>) -> Green;
+    fn insert_many(&self, builder: &mut Cache, idx: usize, green: Vec<Green>) -> Green;
+    fn remove(&self, builder: &mut Cache) -> Option<Green>;
 }
 
 impl GreenMutate for Red {
-    fn remove(&self, builder: &mut GreenBuilder) -> Option<Green> {
+    fn remove(&self, builder: &mut Cache) -> Option<Green> {
         match self.kind().as_child() {
             Some((parent, index, _)) => {
                 let mut children = parent.green().children().collect::<Vec<_>>();
@@ -24,7 +24,7 @@ impl GreenMutate for Red {
             None => None,
         }
     }
-    fn replace(&self, builder: &mut GreenBuilder, green: Green) -> Green {
+    fn replace(&self, builder: &mut Cache, green: Green) -> Green {
         match self.kind().as_child() {
             Some((parent, index, _)) => {
                 let mut replacement = Some(green);
@@ -47,7 +47,7 @@ impl GreenMutate for Red {
         }
     }
 
-    fn push_many(&self, builder: &mut GreenBuilder, mut new_green: Vec<Green>) -> Green {
+    fn push_many(&self, builder: &mut Cache, mut new_green: Vec<Green>) -> Green {
         assert!(self.is_node());
 
         let mut children = self.green().children().collect::<Vec<_>>();
@@ -56,7 +56,7 @@ impl GreenMutate for Red {
         self.replace(builder, new_red)
     }
 
-    fn insert_many(&self, builder: &mut GreenBuilder, idx: usize, green: Vec<Green>) -> Green {
+    fn insert_many(&self, builder: &mut Cache, idx: usize, green: Vec<Green>) -> Green {
         assert!(self.is_node());
 
         let mut children = self.green().children().collect::<Vec<_>>();
@@ -75,9 +75,9 @@ impl GreenMutate for Red {
 }
 
 pub fn replace_green(
-    builder: &mut GreenBuilder,
+    builder: &mut Cache,
     node: Green,
-    f: impl Clone + Fn(&mut GreenBuilder, Green) -> Green,
+    f: impl Clone + Fn(&mut Cache, Green) -> Green,
 ) -> Green {
     let new = f(builder, node);
     if let GreenKind::Node(Node { children }) = &new.kind() {
@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn replace_second() {
-        let mut builder = GreenBuilder::default();
+        let mut builder = Cache::default();
         let tree = builder.node("Root", |builder| {
             vec![builder.node("Add", |builder| {
                 vec![
@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn push_extra() {
-        let mut builder = GreenBuilder::default();
+        let mut builder = Cache::default();
         let tree = builder.node("Root", |builder| {
             vec![builder.node("Add", |builder| {
                 vec![
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn insert_extra() {
-        let mut builder = GreenBuilder::default();
+        let mut builder = Cache::default();
         let tree = builder.node("Root", |builder| {
             vec![
                 builder.node("Add", |builder| {
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn remove() {
-        let mut builder = GreenBuilder::default();
+        let mut builder = Cache::default();
         let tree = builder.node("Root", |builder| {
             vec![
                 builder.node("Add", |builder| {
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn replace_second_ws() {
-        let mut builder = GreenBuilder::default();
+        let mut builder = Cache::default();
         let tree = builder.node("Root", |builder| {
             vec![builder.node("Add", |builder| {
                 vec![
@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn remove_ws() {
-        let mut builder = GreenBuilder::default();
+        let mut builder = Cache::default();
         let tree = builder.node("Root", |builder| {
             vec![builder.node("Add", |builder| {
                 vec![

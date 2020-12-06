@@ -1,0 +1,8 @@
+Value = Nil | 'atom' | List | Cons | String
+
+Nil = '(' ')'
+List = '(' values: Value* ')'
+Cons = '(' car: Value '.' cdr: Value ')'
+String = l_dquote: '"' values: StrValue* r_dquote: '"'
+StrValue = 'text' | Interpolated
+Interpolated = '${' value: Value '}'
