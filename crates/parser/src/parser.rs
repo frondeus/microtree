@@ -1,6 +1,7 @@
 use crate::{Context, State, TokenKind};
 use microtree::Green;
 
-pub trait Parser<Tok: TokenKind> {
-    fn parse(&self, state: State<Tok>, context: &Context<Tok>) -> (Option<Green>, State<Tok>);
+pub trait Parser<'source, Tok: TokenKind<'source>> {
+    fn parse<'ctx>(&self, state: State<'source, Tok>,
+             context: &Context<'source, 'ctx, Tok>) -> (Option<Green>, State<'source, Tok>);
 }

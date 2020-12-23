@@ -1,27 +1,25 @@
-use crate::{
-    Context, Error, OptionExt, Parser, PeekableIterator, SmolStr, State, TextRange, TokenKind,
-};
+use crate::{Context, Error, Parser, PeekableIterator, SmolStr, State, TextRange, TokenKind};
 use microtree::{Green, Name};
 use std::collections::BTreeSet;
 
-impl<Fun, Tok> Parser<Tok> for Fun
+impl<'source, Fun, Tok> Parser<'source, Tok> for Fun
 where
-    Tok: TokenKind,
-    Fun: Fn(Builder<Tok>) -> (Option<Green>, State<Tok>),
+    Tok: TokenKind<'source>,
+    Fun: Fn(Builder<'source, '_, Tok>) -> (Option<Green>, State<'source, Tok>),
 {
-    fn parse(&self, state: State<Tok>, ctx: &Context<Tok>) -> (Option<Green>, State<Tok>) {
+    fn parse(&self, state: State<'source, Tok>, ctx: &Context<'source, '_, Tok>) -> (Option<Green>, State<'source, Tok>) {
         self(state.builder(ctx))
     }
 }
 
-pub struct Builder<'a, Tok: TokenKind> {
-    pub(crate) state: State<Tok>,
-    pub(crate) ctx: &'a Context<'a, Tok>,
+pub struct Builder<'source, 'ctx, Tok: TokenKind<'source>> {
+    pub(crate) state: State<'source, Tok>, pub(crate) ctx: &'ctx
+    Context<'source, 'ctx, Tok>,
     pub(crate) names: BTreeSet<Name>,
 }
 
-impl<'a, Tok: TokenKind> Builder<'a, Tok> {
-    pub(crate) fn new(state: State<Tok>, ctx: &'a Context<'a, Tok>) -> Self {
+impl<'source, 'ctx, Tok: TokenKind<'source>> Builder<'source, 'ctx, Tok> {
+    pub(crate) fn new(state: State<'source, Tok>, ctx: &'ctx Context<'source, 'ctx, Tok>) -> Self {
         Self {
             state,
             ctx,
@@ -33,25 +31,25 @@ impl<'a, Tok: TokenKind> Builder<'a, Tok> {
         self
     }
     pub fn peek_token(&mut self) -> Option<Tok> {
-        self.state.lexer_mut().peek().as_kind()
+        self.state.lexer_mut().peek().map(|t| t.token)
     }
-    pub fn node(self) -> NodeBuilder<'a, Tok> {
+    pub fn node(self) -> NodeBuilder<'source, 'ctx, Tok> {
         NodeBuilder::new(self)
     }
-    pub fn set_ctx(mut self, ctx: &'a Context<'a, Tok>) -> Self {
+    pub fn set_ctx(mut self, ctx: &'ctx Context<'source, 'ctx, Tok>) -> Self {
         self.ctx = ctx;
         self
     }
 
-    pub fn get_ctx(&self) -> &'a Context<'a, Tok> {
+    pub fn get_ctx(&self) -> &'ctx Context<'source, 'ctx, Tok> {
         self.ctx
     }
 
-    pub fn none(self) -> (Option<Green>, State<Tok>) {
+    pub fn none(self) -> (Option<Green>, State<'source, Tok>) {
         (None, self.state)
     }
 
-    pub fn parse(self, parser: impl Parser<Tok>) -> (Option<Green>, State<Tok>) {
+    pub fn parse(self, parser: impl Parser<'source, Tok>) -> (Option<Green>, State<'source, Tok>) {
         let Self { state, names, ctx } = self;
         let (green, mut state) = parser.parse(state, ctx);
 
@@ -72,9 +70,9 @@ impl<'a, Tok: TokenKind> Builder<'a, Tok> {
     }
 
     pub fn handle_trivia(
-        trivia: Option<&'a dyn Parser<Tok>>,
-        state: State<Tok>,
-    ) -> (SmolStr, State<Tok>) {
+        trivia: Option<&'ctx dyn Parser<'source, Tok>>,
+        state: State<'source, Tok>,
+    ) -> (SmolStr, State<'source, Tok>) {
         match trivia {
             None => (Default::default(), state),
             Some(trivia) => {
@@ -90,17 +88,22 @@ impl<'a, Tok: TokenKind> Builder<'a, Tok> {
         }
     }
 
-    pub fn error(self, desc: impl ToString) -> (Option<Green>, State<Tok>) {
+    pub fn error(self, desc: impl ToString) -> (Option<Green>, State<'source, Tok>) {
         let Self {
             mut state, names, ..
         } = self;
-        let from = state.lexer_mut().input().cursor();
 
         let token = state.lexer_mut().next();
-
-        let value = token.map(|t| t.value).unwrap_or_default();
-
-        let range = TextRange::at(from, (value.len() as u32).into());
+        let (range, value) = match token {
+            Some(token) => {
+                (token.range,
+                token.value)
+            },
+            None => {
+                let range = state.lexer_mut().span();
+                (range, Default::default())
+            }
+        };
 
         let error = Error::new(desc, range);
 
@@ -114,7 +117,7 @@ impl<'a, Tok: TokenKind> Builder<'a, Tok> {
         (Some(node), state)
     }
 
-    pub fn token(self) -> (Option<Green>, State<Tok>) {
+    pub fn token(self) -> (Option<Green>, State<'source, Tok>) {
         let Self { state, names, ctx } = self;
         let mut names = names.into_iter();
 
@@ -142,15 +145,15 @@ impl<'a, Tok: TokenKind> Builder<'a, Tok> {
     }
 }
 
-pub struct NodeBuilder<'a, Tok: TokenKind> {
-    state: State<Tok>,
-    ctx: &'a Context<'a, Tok>,
+pub struct NodeBuilder<'source, 'ctx, Tok: TokenKind<'source>> {
+    state: State<'source, Tok>,
+    ctx: &'ctx Context<'source, 'ctx, Tok>,
     names: BTreeSet<Name>,
     children: Vec<Green>,
 }
 
-impl<'a, Tok: TokenKind> NodeBuilder<'a, Tok> {
-    pub(crate) fn new(Builder { state, names, ctx }: Builder<'a, Tok>) -> Self {
+impl<'source, 'ctx, Tok: TokenKind<'source>> NodeBuilder<'source, 'ctx, Tok> {
+    pub(crate) fn new(Builder { state, names, ctx }: Builder<'source, 'ctx, Tok>) -> Self {
         Self {
             state,
             names,
@@ -165,15 +168,15 @@ impl<'a, Tok: TokenKind> NodeBuilder<'a, Tok> {
     }
 
     pub fn peek_token(&mut self) -> Option<Tok> {
-        self.state.lexer_mut().peek().as_kind()
+        self.state.lexer_mut().peek().map(|t| t.token)
     }
 
-    pub fn set_ctx(mut self, ctx: &'a Context<'a, Tok>) -> Self {
+    pub fn set_ctx(mut self, ctx: &'ctx Context<'source, 'ctx, Tok>) -> Self {
         self.ctx = ctx;
         self
     }
 
-    pub fn parse(mut self, parser: impl Parser<Tok>) -> Self {
+    pub fn parse(mut self, parser: impl Parser<'source, Tok>) -> Self {
         let (res, state) = parser.parse(self.state, self.ctx);
         self.state = state;
         if let Some(res) = res {
@@ -183,11 +186,11 @@ impl<'a, Tok: TokenKind> NodeBuilder<'a, Tok> {
         self
     }
 
-    pub fn parse_mode<Tok2>(self, parser: impl Parser<Tok2>) -> Self
+    pub fn parse_mode<Tok2>(self, parser: impl Parser<'source, Tok2>) -> Self
     where
-        Tok2: TokenKind,
-        Tok::Extra: Into<Tok2::Extra>,
-        Tok2::Extra: Into<Tok::Extra>,
+        Tok2: TokenKind<'source>,
+        Tok::Extras: Into<Tok2::Extras>,
+        Tok2::Extras: Into<Tok::Extras>,
     {
         let Self {
             state,
@@ -196,13 +199,13 @@ impl<'a, Tok: TokenKind> NodeBuilder<'a, Tok> {
             mut children,
         } = self;
 
-        let state: State<Tok2> = state.transform();
+        let state: State<Tok2> = state.morph();
 
         let inner_ctx = Context::default();
 
         let (res, state) = parser.parse(state, &inner_ctx);
 
-        let state: State<Tok> = state.transform();
+        let state: State<Tok> = state.morph();
 
         if let Some(res) = res {
             children.push(res);
@@ -216,7 +219,7 @@ impl<'a, Tok: TokenKind> NodeBuilder<'a, Tok> {
         }
     }
 
-    pub fn finish(self) -> (Option<Green>, State<Tok>) {
+    pub fn finish(self) -> (Option<Green>, State<'source, Tok>) {
         let Self {
             mut state,
             names,

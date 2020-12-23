@@ -1,18 +1,18 @@
-use microtree::Cache;
+use microtree::{Cache, Green};
 
 use crate::{Context, Error, Lexer, ParseResult, Parser, TokenKind};
 
-pub struct State<Tok: TokenKind> {
-    lexer: Lexer<Tok>,
+pub struct State<'source, Tok: TokenKind<'source>> {
+    lexer: Lexer<'source, Tok>,
     cache: Cache,
     errors: Vec<Error>,
 }
 
-impl<Tok> State<Tok>
+impl<'source, Tok> State<'source, Tok>
 where
-    Tok: TokenKind,
+    Tok: TokenKind<'source>,
 {
-    fn new(lexer: Lexer<Tok>) -> Self {
+    fn new(lexer: Lexer<'source, Tok>) -> Self {
         Self {
             lexer,
             cache: Default::default(),
@@ -20,11 +20,11 @@ where
         }
     }
 
-    pub fn lexer_mut(&mut self) -> &mut Lexer<Tok> {
+    pub fn lexer_mut(&mut self) -> &mut Lexer<'source, Tok> {
         &mut self.lexer
     }
 
-    pub fn parse(lexer: Lexer<Tok>, parser: impl Parser<Tok>) -> ParseResult {
+    pub fn parse(lexer: Lexer<'source, Tok>, parser: impl Parser<'source, Tok>) -> ParseResult {
         let ctx = Context::default();
         let (root, state) = parser.parse(Self::new(lexer), &ctx);
 
@@ -34,10 +34,10 @@ where
         }
     }
 
-    pub fn transform<Tok2>(self) -> State<Tok2>
+    pub fn morph<Tok2>(self) -> State<'source, Tok2>
     where
-        Tok2: TokenKind,
-        Tok::Extra: Into<Tok2::Extra>,
+        Tok2: TokenKind<'source>,
+        Tok::Extras: Into<Tok2::Extras>,
     {
         let Self {
             lexer,
@@ -47,7 +47,7 @@ where
         State {
             errors,
             cache,
-            lexer: lexer.transform(),
+            lexer: lexer.morph(),
         }
     }
 
@@ -59,7 +59,7 @@ where
         &mut self.cache
     }
 
-    pub(crate) fn builder<'a>(self, ctx: &'a Context<'a, Tok>) -> crate::Builder<'a, Tok> {
+    pub(crate) fn builder<'ctx>(self, ctx: &'ctx Context<'source, 'ctx, Tok>) -> crate::Builder<'source, 'ctx, Tok> {
         crate::Builder::new(self, ctx)
     }
 }

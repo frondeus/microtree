@@ -6,17 +6,25 @@ use generated::*;
 use microtree_parser::State;
 
 mod parser {
-    use microtree_parser::{parsers::*, Builder, Context, Parser, SmolStr, TokenKind};
+    use microtree_parser::{parsers::*, Builder, Context, Parser, Logos, TokenKind};
 
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Logos, Debug, PartialEq, Clone, Copy)]
     pub enum Token {
+        #[error]
         Error,
+        #[token("(")]
         OpenP,
+        #[token(")")]
         CloseP,
+        #[token(".")]
         Dot,
+        #[regex("[0-9a-zA-Z_]+")]
         Atom,
+        #[regex(r#"[ \t\n]+"#)]
         Whitespace,
     }
+
+    impl TokenKind<'_> for Token {}
 
     impl std::fmt::Display for Token {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -35,59 +43,17 @@ mod parser {
         }
     }
 
-    pub type Lexer<T = Token> = microtree_parser::Lexer<T>;
+    pub type Lexer<'s, T = Token> = microtree_parser::Lexer<'s, T>;
 
-    impl TokenKind for Token {
-        type Extra = ();
-
-        fn is_mergeable(self, other: Self) -> bool {
-            self == Token::Error && other == Token::Error
-        }
-
-        fn lex(lexer: &mut microtree_parser::Lexer<Self>) -> Option<(Self, SmolStr)> {
-            let input = lexer.input_mut();
-            let i = input.as_ref();
-            let peeked = i.chars().next()?;
-
-            if peeked.is_whitespace() {
-                let rest = i.chars().take_while(|c| c.is_whitespace()).count();
-
-                return Some((Token::Whitespace, input.chomp(rest)));
-            }
-
-            if peeked == '(' {
-                return Some((Token::OpenP, input.chomp(1)));
-            }
-
-            if peeked == ')' {
-                return Some((Token::CloseP, input.chomp(1)));
-            }
-
-            if peeked == '.' {
-                return Some((Token::Dot, input.chomp(1)));
-            }
-
-            let is_atom = |c: &char| c.is_ascii_alphanumeric() || *c == '_';
-
-            if is_atom(&peeked) {
-                let rest = i.chars().take_while(is_atom).count();
-
-                return Some((Token::Atom, input.chomp(rest)));
-            }
-
-            Some((Token::Error, input.chomp(1)))
-        }
-    }
-
-    pub fn trivia() -> impl Parser<Token> {
-        |mut builder: Builder<Token>| match builder.peek_token() {
+    pub fn trivia<'s>() -> impl Parser<'s, Token> {
+        |mut builder: Builder<'s, '_, Token>| match builder.peek_token() {
             Some(Token::Whitespace) => builder.name("trivia").parse(any_token()),
             _ => builder.none(),
         }
     }
 
-    pub fn sexp() -> impl Parser<Token> {
-        |builder: Builder<Token>| {
+    pub fn sexp<'s>() -> impl Parser<'s, Token> {
+        |builder: Builder<'s, '_, Token>| {
             let mut builder = builder.node().parse(any_token()); //'('
 
             match builder.peek_token() {
@@ -120,8 +86,8 @@ mod parser {
         }
     }
 
-    pub fn value() -> impl Parser<Token> {
-        |builder: Builder<Token>| {
+    pub fn value<'s>() -> impl Parser<'s, Token> {
+        |builder: Builder<'s, '_, Token>| {
             let trivia = trivia();
             let ctx = Context::new(&trivia);
             let mut builder = builder.name("Value").set_ctx(&ctx);

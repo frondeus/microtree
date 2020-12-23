@@ -6,62 +6,36 @@ use generated::*;
 use microtree_parser::State;
 
 mod str_parser {
-    use microtree_parser::{parsers::*, Builder, Parser, SmolStr, TokenKind};
+    use microtree_parser::{parsers::*, Builder, Parser, TokenKind, Logos};
+    use derive_more::Display;
 
-    #[derive(Debug, PartialEq, Clone, Copy)]
+
+    #[derive(Debug, PartialEq, Clone, Copy, Logos, Display)]
     pub enum Token {
+        #[display("`\"`")]
+        #[token("\"")]
         DQuote,
+        #[display("`${`")]
+        #[token("${")]
         OpenI,
+        #[display("`}`")]
+        #[token("}")]
         CloseI,
-        Text,
+        #[display("text")]
+        #[error]
+        Text
     }
 
-    impl std::fmt::Display for Token {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(
-                f,
-                "{}",
-                match self {
-                    Token::DQuote => "`\"`",
-                    Token::OpenI => "`${`",
-                    Token::CloseI => "`}`",
-                    Token::Text => "text",
-                }
-            )
+    impl TokenKind<'_> for Token {
+        fn mergeable(self, other: Self) -> bool {
+            self == Self::Text && (other == Self::Text || other == Self::CloseI)
         }
     }
 
-    impl TokenKind for Token {
-        type Extra = ();
-
-        fn is_mergeable(self, other: Self) -> bool {
-            self == Token::Text && (other == Token::Text || other == Token::CloseI)
-        }
-
-        fn lex(lexer: &mut microtree_parser::Lexer<Self>) -> Option<(Self, SmolStr)> {
-            let input = lexer.input_mut();
-            let i = input.as_ref();
-            let peeked = i.chars().next()?;
-
-            if peeked == '"' {
-                return Some((Token::DQuote, input.chomp(1)));
-            }
-
-            if i.starts_with("${") {
-                return Some((Token::OpenI, input.chomp(2)));
-            }
-
-            if peeked == '}' {
-                return Some((Token::CloseI, input.chomp(1)));
-            }
-
-            Some((Token::Text, input.chomp(1)))
-        }
-    }
-
-    pub fn interp() -> impl Parser<Token> {
-        |builder: Builder<Token>| {
+    pub fn interp<'s>() -> impl Parser<'s, Token> {
+        |builder: Builder<'s, '_, Token>| {
             builder
+                .name("interp")
                 .node()
                 .parse(any_token()) // `${`
                 .parse_mode(crate::parser::value())
@@ -70,19 +44,19 @@ mod str_parser {
         }
     }
 
-    pub fn inner_string() -> impl Parser<Token> {
-        |builder: Builder<Token>| {
+    pub fn inner_string<'s>() -> impl Parser<'s, Token> {
+        |builder: Builder<'s, '_, Token>| {
             let mut builder = builder.name("StringVal").node();
 
             loop {
                 builder = match builder.peek_token() {
-                    Some(Token::Text) => builder.parse(|b: Builder<Token>| b.name("text").token()),
+                    Some(Token::Text) => builder.parse(|b: Builder<'s, '_, Token>| b.name("text").token()),
                     Some(Token::OpenI) => builder.parse(interp()),
                     Some(Token::DQuote) => break builder.finish(),
                     Some(Token::CloseI) => {
                         builder.parse(error("Found `}` which is... unexpected. ICE!"))
                     }
-                    None => builder.parse(tokens(&[
+                    _ => builder.parse(tokens(&[
                         Token::Text,
                         Token::OpenI,
                         Token::CloseI,
@@ -94,94 +68,40 @@ mod str_parser {
     }
 }
 mod parser {
-    use microtree_parser::{parsers::*, Builder, Context, Parser, SmolStr, TokenKind};
+    use microtree_parser::{parsers::*, Builder, Context, Parser, Logos, TokenKind};
+    use derive_more::Display;
 
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Debug, PartialEq, Clone, Copy, Logos, Display)]
     pub enum Token {
+        #[error] #[display("error")]
         Error,
+        #[token("(")] #[display("`(`")]
         OpenP,
+        #[token(")")] #[display("`)`")]
         CloseP,
+        #[token(".")] #[display("`.`")]
         Dot,
+        #[regex("[0-9a-zA-Z_]+")] #[display("atom")]
         Atom,
+        #[regex(r#"[ \t\n]+"#)] #[display("whitespace")]
         Whitespace,
+        #[token("\"")] #[display("`\"`")]
         DQuote,
     }
 
-    impl std::fmt::Display for Token {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(
-                f,
-                "{}",
-                match self {
-                    Token::Error => "error",
-                    Token::Atom => "atom",
-                    Token::Whitespace => "whitespace",
-                    Token::OpenP => "`(`",
-                    Token::CloseP => "`)`",
-                    Token::DQuote => "`\"`",
-                    Token::Dot => "`.`",
-                }
-            )
-        }
-    }
+    impl TokenKind<'_> for Token {}
 
-    pub type Lexer<T = Token> = microtree_parser::Lexer<T>;
+    pub type Lexer<'s, T = Token> = microtree_parser::Lexer<'s, T>;
 
-    impl TokenKind for Token {
-        type Extra = ();
-
-        fn is_mergeable(self, other: Self) -> bool {
-            self == Token::Error && other == Token::Error
-        }
-
-        fn lex(lexer: &mut microtree_parser::Lexer<Self>) -> Option<(Self, SmolStr)> {
-            let input = lexer.input_mut();
-            let i = input.as_ref();
-            let peeked = i.chars().next()?;
-
-            if peeked.is_whitespace() {
-                let rest = i.chars().take_while(|c| c.is_whitespace()).count();
-
-                return Some((Token::Whitespace, input.chomp(rest)));
-            }
-
-            if peeked == '(' {
-                return Some((Token::OpenP, input.chomp(1)));
-            }
-
-            if peeked == ')' {
-                return Some((Token::CloseP, input.chomp(1)));
-            }
-
-            if peeked == '.' {
-                return Some((Token::Dot, input.chomp(1)));
-            }
-
-            if peeked == '"' {
-                return Some((Token::DQuote, input.chomp(1)));
-            }
-
-            let is_atom = |c: &char| c.is_ascii_alphanumeric() || *c == '_';
-
-            if is_atom(&peeked) {
-                let rest = i.chars().take_while(is_atom).count();
-
-                return Some((Token::Atom, input.chomp(rest)));
-            }
-
-            Some((Token::Error, input.chomp(1)))
-        }
-    }
-
-    pub fn trivia() -> impl Parser<Token> {
-        |mut builder: Builder<Token>| match builder.peek_token() {
+    pub fn trivia<'s>() -> impl Parser<'s, Token> {
+        |mut builder: Builder<'s, '_, Token>| match builder.peek_token() {
             Some(Token::Whitespace) => builder.name("trivia").parse(any_token()),
             _ => builder.none(),
         }
     }
 
-    pub fn string() -> impl Parser<Token> {
-        |builder: Builder<Token>| {
+    pub fn string<'s>() -> impl Parser<'s, Token> {
+        |builder: Builder<'s, '_, Token>| {
             let trivia = trivia();
             let ctx = Context {
                 leading_trivia: Some(&trivia),
@@ -200,8 +120,8 @@ mod parser {
         }
     }
 
-    pub fn sexp() -> impl Parser<Token> {
-        |builder: Builder<Token>| {
+    pub fn sexp<'s>() -> impl Parser<'s, Token> {
+        |builder: Builder<'s, '_, Token>| {
             let mut builder = builder.node().parse(any_token()); //'('
 
             match builder.peek_token() {
@@ -234,8 +154,8 @@ mod parser {
         }
     }
 
-    pub fn value() -> impl Parser<Token> {
-        |builder: Builder<Token>| {
+    pub fn value<'s>() -> impl Parser<'s, Token> {
+        |builder: Builder<'s, '_, Token>| {
             let trivia = trivia();
             let ctx = Context::new(&trivia);
             let mut builder = builder.name("Value").set_ctx(&ctx);
@@ -259,7 +179,7 @@ fn main() {
         Value::new(Red::root(parsed.root?))
     }
 
-    let value = dbg!(act(r#"(a "  foo ${(1 2 3)} bar  " c)"#)).unwrap();
+    let value = dbg!(act(r#"(a "  foo ${(1 2 3)} bar $ baz }  " c)"#)).unwrap();
 
     println!("`{}`", value.red().green());
     println!("VALUES: ");

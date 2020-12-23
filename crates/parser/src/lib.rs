@@ -1,3 +1,4 @@
+#![feature(associated_type_bounds)]
 pub use smol_str::SmolStr;
 pub use text_size::{TextLen, TextRange, TextSize};
 
